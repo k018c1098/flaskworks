@@ -1,36 +1,55 @@
-from flask import Flask, render_template, request,redirect
+from flask import Flask, render_template, request, redirect
 import mysql.connector as db
+import os
+import json
 
 db_param = {
 	'user' : 'mysql',
 	'host' : 'localhost',
 	'password' : '',
-	'database' : 'db1'
+	'database' : 'itemdb'
 }
 
 app = Flask(__name__)
+
+ALLDWED_EXTENSIONS=set(['png','jpg','jpeg','git'])
+app.config['UPLOAD_FOLDER']= './static/uploads'
+
+def allowed_file(filename):
+	return '.' in filename and filename.rsplit('.', 1)[1] in ALLDWED_EXTENSIONS
 
 @app.route('/')
 def index():
 	conn = db.connect(**db_param)
 	cur = conn.cursor()
-	stmt = 'SELECT * FROM books'
+	stmt = 'SELECT * FROM list'
 	cur.execute(stmt)
 	rows = cur.fetchall()
 	cur.close()
 	conn.close()
-	return render_template('index.html', books = rows)
+	return render_template('index.html', list = rows)
 
 @app.route('/send', methods=['POST'])
 def send():
+	print(request.files)
 	title = request.form.get('title')
 	price = request.form.get('price')
-	if title=="" or price=="":
+	image = request.files['img_file']
+	if title=="" or price=="" or image=="":
 		return redirect('/')
+	
+	if image and allowed_file(image.filename):
+		image.save('static/uploads/' + image.filename)
 	conn = db.connect(**db_param)
 	cur = conn.cursor()
-	stmt = 'INSERT INTO books(title, price) VALUES(%s, %s)'
-	cur.execute(stmt, (title, int(price)) )
+	
+	stmt = 'SELECT * FROM list WHERE title=%s'
+	cur.execute(stmt, (title,))
+	rows = cur.fetchall()
+	if len(rows)==0:
+		cur.execute('INSERT INTO list(title, price, image) VALUES(%s, %s, %s)', (title, int(price), image.filename))
+	else:
+		cur.execute('UPDATE list SET price=%s, image=%s WHERE title=%s', (int(price), image.filename, title))
 	conn.commit()
 	cur.close()
 	conn.close()
@@ -38,7 +57,7 @@ def send():
 
 @app.route('/delete', methods=['POST'])
 def delete():
-	del_list = request.form.get('del_list')
+	del_list = request.form.getlist('del_list')
 	conn = db.connect(**db_param)
 	cur = conn.cursor()
 	stmt = 'DELETE FROM books WHERE id=%s'
